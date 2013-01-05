@@ -3,7 +3,7 @@
 # Original Ruby Plan: https://github.com/jshield/RubyGTS/, Credit: jshield
 # Python Implementation Credit: http://projectpokemon.org/forums/showthread.php?21130-Code-GTS-Encryption-Decryption-Library, Credit: K-Shadow 
 # GTS format to .pkm file code: http://code.google.com/p/ir-gts/wiki/Readme, Credit: Infinite Recursion
-# IR-GTS Python Basic Translation: http://projectpokemon.org/forums/member.php?27134-bpk59, Credit: bpkelley59
+# IR-GTS Python Basic Translation: http://projectpokemon.org/forums/showthread.php?15558-curl-amp-GTS-emulation-convert-336-byte-response-into-220-byte-PKM-file, Credit: bpkelley59
 #============================== License ==============================
 #    This program is free software: you can redistribute it and/or modify
 #    it under the terms of the GNU General Public License as published by
@@ -20,60 +20,37 @@
 #
 #============================== INCLUDES ==============================
 
-import socket, sys, time, thread
-from sys import *
+import sys
 from platform import system
-import os, re, hashlib
 from struct import *
 from base64 import *
 from binascii import *
 from array import array
 import itertools
+import os
+import re
+import hashlib
+import struct
+
 
 #============================== FUNCTIONS ==============================
 
-def decode_data(data):
-    b64dec = urlsafe_b64decode(data)
-    data_ar = array('B')
-    data_ar.fromstring(b64dec)
-    checksum = (eval('0x' + hexlify(data_ar[0:4]))) ^ 0x4a3b2c1d
-    dec = data_ar[4:len(data_ar)]
-    out = array('B')
-    rng = checksum | (checksum << 16) & 0x7fffffff
-    for i in range(len(dec)):
-        rng = (rng * 0x45 + 0x1111) & 0x7fffffff
-        key = (rng >> 16) & 0xff
-        out.append((dec[i] ^ key) & 0xff)
-    return hexlify(out.tostring())
 
-def calcchk(data):
-    check = 0
-    data_chr = [data[x:x+2] for x in xrange(0,len(data),2)]
-    data_r = array('B')
-    for x in data_chr:
-        data_r.append(eval('0x'+x+''))
-    for x in data_r:
-        check = check + x
-    return check
-
-def encode_data(data):
-    chk = calcchk(data)
-    appendchk = hex(chk ^ 0x4a3b2c1d)[2:]
-    data_chr = [data[x:x+2] for x in xrange(0,len(data),2)]
-    data_ar = array('B')
-    out = array('B')
-    for x in data_chr:
-        data_ar.append(eval('0x'+x+''))
-    rng = chk | (chk << 16) & 0x7fffffff
-    for i in range(len(data_ar)):
-        rng = (rng * 0x45 + 0x1111) & 0x7fffffff
-        key = (rng >> 16) & 0xff
-        out.append((data_ar[i] ^ key) & 0xff)
-    outstring = "".join(out.tostring())
-    outstr = unhexlify(appendchk) + outstring
-    return urlsafe_b64encode(outstr)
-
-shiftind='\x00\x01\x02\x03\x00\x01\x03\x02\x00\x02\x01\x03\x00\x02\x03\x01\x00\x03\x01\x02\x00\x03\x02\x01\x01\x00\x02\x03\x01\x00\x03\x02\x01\x02\x00\x03\x01\x02\x03\x00\x01\x03\x00\x02\x01\x03\x02\x00\x02\x00\x01\x03\x02\x00\x03\x01\x02\x01\x00\x03\x02\x01\x03\x00\x02\x03\x00\x01\x02\x03\x01\x00\x03\x00\x01\x02\x03\x00\x02\x01\x03\x01\x00\x02\x03\x01\x02\x00\x03\x02\x00\x01\x03\x02\x01\x00'
+def decode_data(bytes):
+    bytes = b64decode(bytes.replace('-', '+').replace('_', '/'))
+    ar = array('B')
+    ar.fromstring(bytes)
+    chksm = (eval('0x' + hexlify(ar[0:4]))) ^ 0x4a3b2c1d
+    bin = ar[4:len(ar)]
+    pkm = array('B')
+    GRNG = chksm | (chksm << 16)
+    for i in range(len(bin)):
+        GRNG = (GRNG * 0x45 + 0x1111) & 0x7fffffff
+        keybyte = (GRNG >> 16) & 0xff
+        pkm.append((bin[i] ^ keybyte) & 0xff)
+    pkm = pkm[4:len(pkm)]
+    pkm = pkm[0:292]
+    return pkm
 
 class makerand:
     def __init__(self, rngseed):
@@ -84,36 +61,26 @@ class makerand:
       return self.rngseed>>16
     __call__=rand
 
-def encode(pkm):
-    s=list(unpack("IHH"+"H"*(len(pkm)/2-4), pkm))
-    shift=((s[0]>>0xD & 0x1F) %24)
-    order=[ord(i) for i in shiftind[4*shift:4*shift+4]]
-    shifted=s[:3]
-    for i in order: shifted+=s[3+16*i:19+16*i]
-    shifted+=s[67:]
-
-    rand=makerand(s[2])
-    for i in range(3, 67): shifted[i]^=rand()
-    if len(shifted)>67:
-      rand=makerand(shifted[0])
-      for i in range(67, len(shifted)): shifted[i]^=rand()
-    return pack("IHH"+"H"*(len(pkm)/2-4), *shifted)
+shiftind='\x00\x01\x02\x03\x00\x01\x03\x02\x00\x02\x01\x03\x00\x02\x03\x01\x00\x03\x01\x02\x00\x03\x02\x01\x01\x00\x02\x03\x01\x00\x03\x02\x01\x02\x00\x03\x01\x02\x03\x00\x01\x03\x00\x02\x01\x03\x02\x00\x02\x00\x01\x03\x02\x00\x03\x01\x02\x01\x00\x03\x02\x01\x03\x00\x02\x03\x00\x01\x02\x03\x01\x00\x03\x00\x01\x02\x03\x00\x02\x01\x03\x01\x00\x02\x03\x01\x02\x00\x03\x02\x00\x01\x03\x02\x01\x00'
 
 def decode(bin):
-    shifted=list(unpack("IHH"+"H"*(len(bin)/2-4), bin))
-    rand=makerand(shifted[2])
-    for i in range(3, 67): shifted[i]^=rand()
-    if len(shifted)>67:
-      rand=makerand(shifted[0])
-      for i in range(67, len(shifted)): shifted[i]^=rand()
-    shift=((shifted[0]>>0xD & 0x1F) %24)
-    order=[ord(i) for i in shiftind[4*shift:4*shift+4]]
-    s=shifted[:3]
-    for i in range(4): s+=shifted[3+16*order.index(i):19+16*order.index(i)]
-    s+=shifted[67:]
-    return pack("IHH"+"H"*(len(bin)/2-4), *s)
+  shifted=list(struct.unpack("IHH"+"H"*(len(bin)/2-4), bin))
+  rand=makerand(shifted[2])
+  for i in range(3, 67): shifted[i]^=rand()
+  if len(shifted)>67:
+    rand=makerand(shifted[0])
+    for i in range(67, len(shifted)): shifted[i]^=rand()
+  
+  shift=((shifted[0]>>0xD & 0x1F) %24)
+  print shift
+  order=[ord(i) for i in shiftind[4*shift:4*shift+4]]
+  s=shifted[:3]
+  for i in range(4): s+=shifted[3+16*order.index(i):19+16*order.index(i)]
+  s+=shifted[67:]
+  return struct.pack("IHH"+"H"*(len(bin)/2-4), *s)
 
-def prep_pkm( pkm_file ):
+
+def prep_pkm(pkm_file):
       global pkm
       if (len(pkm_file) == 0) or (pkm_file == 'NONE') :
           print 'Enter the path or drag the pkm file here:'
@@ -132,19 +99,20 @@ def prep_pkm( pkm_file ):
       path2 = path.replace('.pkm','') + "_phase1"
       print 'Now writing temporary file to '+path2
       file2 = open(path2, "wb")
-      file2.write(a2b_hex(decode_data(file.read())))
+      file2.write(decode_data(file.read()))
       file.close()
       file2.close()
 
-      f = open(path2, 'rb')
-      pkm = f.read()
+      with open(path2, 'rb') as f:
+          pkm = f.read()
       f.close()
       
+      #print pkm
       pkm = decode(pkm)
+      #print pkm
       if len(pkm) != 136:
   	pkm = pkm[0:136]
-      pkm_file = path2
-      new_pkm_file_name = pkm_file + '.decodedFinal.pkm'
+      new_pkm_file_name = path2 + '.decodedFinal.pkm'
       print "Writing new pkm file:",new_pkm_file_name
       new_pkm_fh = open ( new_pkm_file_name, 'wb' )
       new_pkm_fh.write(pkm)
@@ -172,5 +140,9 @@ exit(0)
 # Save that data to a file, launch the script and drag that file to the script, and press enter/return
 #
 # From there you should get a nice .pkm file from an ugly network string..
+#
+# Note, this script is currently only tested on the 4th Generation of Pokemon 
+# [Pokemon diamond/pearl] ans so is largerly incompatiable with newer generations such as
+# Pokemon black
 #
 #============================== END ==============================

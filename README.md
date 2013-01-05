@@ -15,3 +15,7 @@ GTS To .pkm Converter
 
  From there you should get a nice .pkm file from an ugly network string..
  
+ Note, this script is currently only tested on the 4th Generation of Pokemon 
+ [Pokemon diamond/pearl] ans so is largerly incompatiable with newer generations such as
+ Pokemon black
+ 
